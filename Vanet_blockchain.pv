@@ -1,0 +1,82 @@
+(*channel*)
+free c : channel.
+(*free xi:bitstring [private].*)
+(*free test:bitstring [private].*)
+(*Type*)
+type nonce.
+type P. (*gen element*)
+type G. (*gen element for token*)
+const g: nonce.
+ 
+free y:nonce [private]. (*TA master secret*)
+
+(*query attacker(test).*)
+(*functions*)
+(*Scalar multiplication*)
+fun mul_p(P, nonce): P.
+fun mul_g(P, nonce): G.
+
+(*IBE *)
+fun ibenc(bitstring,P):bitstring.
+reduc forall m:bitstring, idp:P, mpk:P, y1:nonce; ibdec(ibenc(m,mpk),idp) =m.
+
+(*Inverse for the last step of communication setup*)
+reduc forall f:P, x1: nonce, x2:nonce; getpoint(mul_p(mul_p(f, x1),x2),x1) = mul_p(f,x2).
+
+
+    (*Bilinear pairing*)
+fun bil(P, P): nonce.
+
+(*equation forall f:P,k:P, x1: nonce; bil(mul_p(f, x1),k) = bil(f,mul_p(k, x1)).*)
+(*bil(P,Q)=bil(Q,P)*)
+equation forall r1: P, t1: P; bil(r1, t1) = bil(t1, r1).
+
+
+(*Events*)
+event OBU_auth_start(nonce).
+event OBU_auth_RSU(nonce).
+event RSU_auth_start(P).
+event RSUOBU_auth_end(P).
+
+query a1:P,a2:nonce,a3:nonce; inj-event(RSUOBU_auth_end(a1)) ==> (inj-event(OBU_auth_RSU(a2)) ==> inj-event(OBU_auth_start(a3))).
+query a1:P,a2:P; inj-event(RSUOBU_auth_end(a1)) ==> inj-event(RSU_auth_start(a2)).
+
+let OBU(Qv:P,yQv:P,Qr:P, yP:P) =
+in(c,(xiQr:P));
+new s: nonce;
+let A1 = bil(yQv,Qr) in 
+let syQv = mul_p(yQv,s) in
+let M1 = ibenc((A1,syQv,yQv),Qr) in
+event OBU_auth_start(A1);
+out(c,M1);
+in(c,(xisyQv:P));
+let xiyQv = getpoint(xisyQv,s) in
+let C1 = bil(xiyQv,Qr) in
+let C2 = bil(yQv,xiQr) in
+if C1 = C2 then
+event RSUOBU_auth_end(xiyQv).
+(*out(c,test).*)
+
+let RSU(Qv:P,yQr:P,Qr:P) =
+new xi: nonce; (*RSU local secret*)
+let xiQr = mul_p(Qr,xi) in 
+out(c,(xiQr));
+in(c,M1:bitstring);
+let (A1:nonce,syQv:P,yQv:P)=ibdec(M1,yQr) in
+let As1= bil(Qv,yQr) in
+if A1=As1 then
+event OBU_auth_RSU(As1);
+let xisyQv =  mul_p(syQv, xi) in
+let xiyQv =  mul_p(yQv, xi) in
+event RSU_auth_start(xisyQv);
+out(c,(xisyQv)).
+
+process
+new G1:P;
+let yP = mul_p(G1,y) in
+out(c,yP);
+new Qv: P;
+new Qr: P;
+new yQv:P;
+new yQr:P;
+ ( (!OBU(Qv,yQv,Qr,yP)) | (!RSU(Qv,yQr,Qr)) )
