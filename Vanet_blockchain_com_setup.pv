@@ -1,0 +1,85 @@
+(*channel*)
+free c : channel.
+(*free xi:bitstring [private].*)
+free test:bitstring [private].
+(*Type*)
+type nonce.
+type ID.
+type P. (*gen element*)
+type inverse.
+const g: nonce.
+free y: nonce [private]. 
+free xi: nonce [private]. (*RSU local secret*)
+query attacker(test).
+
+(*functions*)
+(*Scalar multiplication*)
+fun mul_p(P, nonce): P.
+fun mul_sk(P, nonce): P.
+fun H(ID):P.
+(*Bilinear pairing*)
+fun bil(P, P): nonce.
+equation forall qv:ID, qr: ID, x2:nonce; bil(mul_sk(H(qv), x2), H(qr)) = bil(H(qv),mul_sk(H(qr), x2)).
+
+(*equation forall qv:P, xi:nonce, x2:nonce; mul_sk(H(qv), x2), H(qr)) = bil(H(qv),mul_sk(H(qr), x2)).*)
+(*IBE *)
+fun ibenc(bitstring,P):bitstring.
+reduc forall m:bitstring, idp:P, mpk:P, y1:nonce; ibdec(ibenc(m,mpk),idp) =m.
+
+(*Inverse for the last step of communication setup*)
+reduc forall f:P, x1: nonce, x2:nonce; get_p(mul_p(f, x2),x1)= mul_p(mul_p(f, x1),x2).
+reduc forall f:P, x1: nonce, x2:nonce; getpoint(mul_p(mul_p(f, x2),x1),x2)= mul_p(f, x1)).
+fun bil2(P, P): nonce.
+equation forall qv:ID, qr: ID, a:nonce,b:nonce; bil2(mul_p(mul_p(H(qv), a),b), H(qr)) = bil2(mul_p(H(qv),a),mul_p(H(qr), b)).
+
+(*Events*)
+event OBU_auth_start(nonce).
+event OBU_auth_RSU(nonce).
+event RSU_auth_start(P).
+event RSUOBU_auth_end(P).
+query a1:P,a2:P; inj-event(RSUOBU_auth_end(a1)) ==> inj-event(RSU_auth_start(a2)).
+query a1:P,a2:nonce,a3:nonce; inj-event(RSUOBU_auth_end(a1)) ==> (inj-event(OBU_auth_RSU(a2)) ==> inj-event(OBU_auth_start(a3))).
+
+let OBU(Qv:P,yQv:P,Qr:P, yP:P,xiQr:P,yQv1:P, xi:nonce) =
+new s: nonce;
+let syQv1 = mul_p(yQv1,s) in
+let A1 = bil(yQv,Qr) in 
+let M1 = ibenc((A1,syQv1),Qr) in
+event OBU_auth_start(A1);
+out(c,M1);
+in(c,xisyQv1:P);
+let xiyQv_test1 = mul_p(yQv1, xi) in
+let xiyQv_test2 = get_p(mul_p(yQv1, xi),s) in
+let xiyQv_test3 = mul_p(xisyQv1, s) in
+let C1 = bil(xiyQv_test3,Qr) in
+let C2 = bil(yQv1,xiQr) in
+if xisyQv1 = xiyQv_test2 then
+if C1 = C2 then
+event RSUOBU_auth_end(xiyQv_test1);
+out(c,test).
+
+let RSU(Qv:P,yQr:P,Qr:P,xi:nonce) =
+in(c,M1:bitstring);
+let (A1:nonce,syQv1:P)=ibdec(M1,yQr) in
+let As1= bil(Qv,yQr) in
+if A1=As1 then
+event OBU_auth_RSU(As1);
+let xisyQv1 =  mul_p(syQv1, xi) in
+event RSU_auth_start(xisyQv1);
+out(c,xisyQv1).
+
+process
+new G1:P;
+let yP = mul_p(G1,y) in
+out(c,yP);
+new Qvid: ID;
+let Qv = H(Qvid) in
+new Qrid: ID;
+let Qr = H(Qrid) in
+let yQv = mul_sk(Qv,y) in
+new yQv1: P;
+let yQr = mul_sk(Qr,y) in
+
+let xiQr = mul_p(Qr,xi) in 
+out(c,(xiQr));
+ ( (!OBU(Qv,yQv,Qr,yP,xiQr,yQv1,xi)) | (!RSU(Qv,yQr,Qr,xi)) )
